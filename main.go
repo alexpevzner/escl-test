@@ -32,13 +32,11 @@ var (
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			DialContext:           DialContext,
+			DialTLSContext:        DialTLSContext,
 			MaxIdleConns:          100,
 			IdleConnTimeout:       90 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
 		},
 	}
 
@@ -48,10 +46,8 @@ var (
 		Transport: &http.Transport{
 			Proxy:             http.ProxyFromEnvironment,
 			DialContext:       DialContext,
+			DialTLSContext:    DialTLSContext,
 			DisableKeepAlives: true,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
 		},
 	}
 )
@@ -266,7 +262,22 @@ var (
 	connLock  sync.Mutex
 )
 
-// DialContext opens a new Conn
+// wrapConn wraps net.Conn into the Conn structure
+func wrapConn(conn net.Conn) *Conn {
+	n := connNext.Add(1) + 1
+	wrapped := &Conn{conn}
+
+	connLock.Lock()
+	connNames[conn.LocalAddr().String()] = n
+	connLock.Unlock()
+
+	wrapped.Log("created (%s->%s)",
+		conn.LocalAddr(), conn.RemoteAddr())
+
+	return wrapped
+}
+
+// DialContext opens a new TCP Conn
 func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	dialer := &net.Dialer{
 		Timeout:   30 * time.Second,
@@ -275,17 +286,26 @@ func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 
 	conn, err := dialer.DialContext(ctx, network, addr)
 	if err == nil {
-		n := connNext.Add(1) + 1
-		wrapped := &Conn{conn}
+		conn = wrapConn(conn)
+	}
 
-		connLock.Lock()
-		connNames[conn.LocalAddr().String()] = n
-		connLock.Unlock()
+	return conn, err
+}
 
-		wrapped.Log("created (%s->%s)",
-			conn.LocalAddr(), conn.RemoteAddr())
+// DialTLSContext opens a new TLS Conn
+func DialTLSContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
 
-		conn = wrapped
+	config := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	conn, err := tls.DialWithDialer(dialer, network, addr, config)
+	if err == nil {
+		return wrapConn(conn), nil
 	}
 
 	return conn, err
