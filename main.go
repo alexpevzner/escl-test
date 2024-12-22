@@ -440,7 +440,9 @@ func main() {
 			log("%s", err)
 			break
 		}
+
 		log("Image length: %d bytes", n)
+		time.Sleep(time.Second)
 	}
 
 	DoDELETE(img)
