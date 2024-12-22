@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +36,9 @@ var (
 			IdleConnTimeout:       90 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
 		},
 	}
 
@@ -45,6 +49,9 @@ var (
 			Proxy:             http.ProxyFromEnvironment,
 			DialContext:       DialContext,
 			DisableKeepAlives: true,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
 		},
 	}
 )
@@ -121,7 +128,7 @@ func DoScanJobs(base *url.URL) (*url.URL, error) {
 		`<pwg:Height>3508</pwg:Height>` +
 		`</pwg:ScanRegion>` +
 		`</pwg:ScanRegions>` +
-		//`<pwg:InputSource>Feeder</pwg:InputSource>` +
+		`<pwg:InputSource>Feeder</pwg:InputSource>` +
 		`<scan:ColorMode>Grayscale8</scan:ColorMode>` +
 		`<pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>` +
 		`<scan:DocumentFormatExt>image/jpeg</scan:DocumentFormatExt>` +
@@ -347,7 +354,9 @@ func main() {
 	LogContext = httptrace.WithClientTrace(context.Background(),
 		&httptrace.ClientTrace{
 			GotConn: func(info httptrace.GotConnInfo) {
-				conn := info.Conn.(*Conn)
+				connLock.Lock()
+				n := connNames[info.Conn.LocalAddr().String()]
+				connLock.Unlock()
 
 				flags := []string{}
 				if info.Reused {
@@ -362,7 +371,9 @@ func main() {
 					flags = append(flags, "new")
 				}
 
-				conn.Log("allocated (%s)", strings.Join(flags, " "))
+				log("Connection #%d: allocated (%s)",
+					n, strings.Join(flags, " "))
+
 			},
 
 			PutIdleConn: func(err error) {
