@@ -25,6 +25,7 @@ const LogFileName = "escl-test.log"
 var (
 	// Logging
 	LogFile    *os.File
+	LogStart   = time.Now()
 	LogContext context.Context
 
 	// HTTPClient is the normal http.Client
@@ -69,6 +70,10 @@ func log(format string, args ...any) {
 	s := []byte(fmt.Sprintf(format+"\n", args...))
 	os.Stdout.Write(s)
 	if LogFile != nil {
+		tm := time.Now().Sub(LogStart) / time.Millisecond
+		sec, msec := tm/1000, tm%1000
+		ts := fmt.Sprintf("%2.2d:%2.2d.%3.3d: ", sec/60, sec%60, msec)
+		LogFile.Write([]byte(ts))
 		LogFile.Write(s)
 	}
 }
