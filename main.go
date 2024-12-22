@@ -182,8 +182,9 @@ func DoScanJobs(base *url.URL) (*url.URL, error) {
 }
 
 // DoNextDocument sends eSCL NextDocument request.
-// It returns the length of received image or an error
-func DoNextDocument(img *url.URL) (int64, error) {
+// It returns the length of received image, HTTP status (0 if not available)
+// and error, if any.
+func DoNextDocument(img *url.URL) (int64, int, error) {
 	log("DoNextDocument")
 
 	// Make HTTP request
@@ -202,7 +203,7 @@ func DoNextDocument(img *url.URL) (int64, error) {
 
 	if err != nil {
 		err := fmt.Errorf("NextDocument: %s", err)
-		return 0, err
+		return 0, 0, err
 	}
 
 	// Drain the image
@@ -211,16 +212,16 @@ func DoNextDocument(img *url.URL) (int64, error) {
 
 	if err != nil && err != io.EOF {
 		err := fmt.Errorf("NextDocument: %s", err)
-		return 0, err
+		return 0, rsp.StatusCode, err
 	}
 
 	// Analyze HTTP status code
 	if rsp.StatusCode/100 != 2 {
 		err := fmt.Errorf("NextDocument: HTTP %s", rsp.Status)
-		return 0, err
+		return 0, rsp.StatusCode, err
 	}
 
-	return n, nil
+	return n, rsp.StatusCode, nil
 }
 
 // DoDELETE sends eSCL DELETE request.
@@ -402,7 +403,13 @@ func main() {
 	}
 
 	for {
-		n, err := DoNextDocument(img)
+		n, status, err := DoNextDocument(img)
+		if status == http.StatusServiceUnavailable {
+			time.Sleep(time.Second)
+			log("Retryinng")
+			continue
+		}
+
 		if err != nil {
 			// Don't die here; we still need to cleanup
 			log("%s", err)
